@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Game</title>
+    <link rel="stylesheet" href="game.css">
+</head>
+<body>
+    <h1>Demo Break-Out Game</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <br/>
+    <button id="gameButton" onclick="StartGame(this)">Start Game!</button>
+</body>
+<script>
+
+    const PADDLE_WIDTH = 100;
+    const PADDLE_HEIGHT = 10;
+    const PADDLE_OFFSET = 60;
+    const DEFLECTION_RATE = 0.35;
+    const BRICK_COUNT = 100;
+    const BRICK_WIDTH = 100;
+    const BRICK_HEIGHT = 20;
+    const ROW_COLORS = ['darkred','firebrick','red','darkorange','orange','gold','yellow',
+        'darkblue','blue','skyblue','cyan','darkolivegreen','olive'];
+
+    let canvas, canvasContext;
+    let ballX, ballY;
+    let ballSpeedX, ballSpeedY;
+    let paddleX = 400;
+    let paddleY = 540;
+    let mouseX = 0, mouseY = 0;
+    let bricks = [];
+    let score = 0;
+    let lives = 3;
+    let isGameOver = false;
+    let didPlayerWin = false;
+    let winFlashCount = 0;
+    let isGameRunning = false;
+
+    let soundBrickHit, soundBallOut, soundGameOver, soundGameWin;
+
+    function moveAll() {
+        ballX += ballSpeedX;
+        ballY += ballSpeedY;
+
+        if (ballX > canvas.width) {
+            ballSpeedX *= -1;
+        }
+
+        if (ballX < 0) {
+            ballSpeedX *= -1;
+        }
+
+        if (ballY > canvas.height) {
+            ballReset();
+        }
+
+        if (ballY < 0) {
+            ballSpeedY *= -1;
+        }
+    }
+
+    function colorRect(x,y,width,height, color) {
+        canvasContext.fillStyle = color;
+        canvasContext.fillRect(x,y,width,height);
+    }
+
+    function colorCircle(x,y,radius,color) {
+        canvasContext.fillStyle = color;
+        canvasContext.beginPath();
+        canvasContext.arc(x, y, radius, 0, Math.PI * 2, true);
+        canvasContext.fill();
+    }
+
+    function drawBrick(x,y, width, height, innerColor, outerColor){
+        colorRect(x,y,width,height,outerColor);
+        colorRect(x+2,y+2,width-4,height-4,innerColor);
+    }
+
+    function drawBricks(){
+        bricks.forEach((brick)=>{
+            if(brick.visible){
+                drawBrick(brick.x, brick.y,brick.width, brick.height,brick.color,'white');
+            }
+        })
+    }
+
+    function drawAll() {
+        colorRect(0,0,canvas.width, canvas.height,'black');
+
+        colorCircle(ballX, ballY,10,'white');
+
+        colorRect(paddleX - (PADDLE_WIDTH/2), paddleY,PADDLE_WIDTH, PADDLE_HEIGHT,'white');
+
+        drawBricks();
+
+        colorText(`${mouseX}, ${mouseY}`, 10, canvas.height - 15, 'yellow');
+        colorText(`Lives: ${lives} \t Score: ${score}`, 600, canvas.height-15,'white');
+    }
+
+    function ballPaddleCollision() {
+        let paddleTop = paddleY;
+        let paddleBottom = paddleY + PADDLE_HEIGHT;
+        let paddleLeft = paddleX - (PADDLE_WIDTH / 2);
+        let paddleRight = paddleX + PADDLE_WIDTH;
+
+        if (ballY >= paddleTop && ballY <= paddleBottom &&
+            ballX >= paddleLeft && ballX <= paddleRight) {
+            ballSpeedY *= -1;
+
+            let ballOffsetFromPaddleCenter = ballX - paddleX;
+
+            ballSpeedX = ballOffsetFromPaddleCenter * DEFLECTION_RATE;
+        }
+    }
+
+    function ballBrickCollision() {
+        for(let i=0; i<bricks.length; i++){
+            let brick = bricks[i];
+            if(!brick.visible){
+                continue;
+            }
+
+            let brickLeft = brick.x;
+            let brickRight = brick.x + brick.width;
+            let brickTop = brick.y;
+            let brickBottom = brick.y + brick.height;
+
+            if(ballX>= brickLeft && ballX <= brickRight &&
+            ballY <= brickBottom && ballY >= brickTop){
+                brick.visible = false;
+                soundBrickHit.play();
+                score += brick.points;
+
+                if(ballX-brickLeft <= ballSpeedX ||
+                    brickRight-ballX <= ballSpeedX){
+                    ballSpeedX *= -1;
+                }
+                if(ballY-brickBottom <= ballSpeedY ||
+                    brickTop-ballY <= ballSpeedY){
+                    ballSpeedY *= -1;
+                }
+            }
+
+        }
+    }
+
+    function checkCollisions() {
+        ballPaddleCollision();
+        ballBrickCollision();
+    }
+
+    function colorText(text, x, y, color, font='12px Arial'){
+        canvasContext.fillStyle = color;
+        canvasContext.font = font;
+        canvasContext.fillText(text, x, y);
+    }
+
+    function checkWinCondition() {
+        let visibleCount = bricks.filter(brick=> brick.visible).length;
+        if(visibleCount <= 0){
+            didPlayerWin = true;
+            soundGameWin.play();
+        }
+    }
+
+    function updateAll() {
+        if(isGameOver){
+            drawGameOver();
+            return;
+        }
+        if(didPlayerWin){
+            drawWinner();
+            return;
+        }
+        moveAll();
+        drawAll();
+        checkCollisions();
+        checkWinCondition();
+    }
+
+    function drawGameOver() {
+        colorRect(200,150,400,250,'orange');
+        colorText('GAME OVER',210,210,'red','bold 60px Arial');
+        colorText(`Final Score: ${score}`,280,280,'black','bold 30px Arial');
+
+    }
+
+    function drawWinner() {
+        colorRect(200,150,400,250,'lightgreen');
+        if(winFlashCount < 7){
+            colorText('WINNER!!!',250,210,'blue','bold 60px Arial');
+        }else{
+            colorText('WINNER!!!',250,210,'white','bold 60px Arial');
+        }
+        if(winFlashCount>15){
+            winFlashCount=0;
+        }else{
+            winFlashCount++;
+        }
+        colorText(`Final Score: ${score}`,280,280,'black','bold 30px Arial');
+
+    }
+
+    function ballReset(){
+        soundBallOut.play();
+        ballX = canvas.width/2;
+        ballY = canvas.height/2;
+        lives--;
+        if(lives <= -1){
+            isGameOver = true;
+            soundGameOver.play();
+            lives = 0;
+        }
+    }
+
+    function updateMousePos(evt) {
+        let bounds = canvas.getBoundingClientRect();
+        let root = document.documentElement;
+
+        mouseX = evt.clientX - bounds.left - root.scrollLeft;
+        mouseY = evt.clientY - bounds.top - root.scrollTop;
+
+        paddleX = mouseX;
+    }
+
+    function getRndInteger(min, max) {
+        return Math.floor(Math.random() * (max - min + 1) ) + min;
+    }
+
+    function initializeBricks(){
+        let currentRow = 0;
+        let currentX = 0;
+        let colorIndex = currentRow;
+        for(let i=0; i<BRICK_COUNT; i++){
+            let width = 0;
+            let points = 10;
+            switch (getRndInteger(1,4)) {
+                case 1:
+                    width = BRICK_WIDTH*1.5;
+                    points = 15;
+                    break;
+                case 2:
+                    width = BRICK_WIDTH*0.5
+                    points = 5;
+                    break;
+                case 3:
+                    width = BRICK_WIDTH*2;
+                    points = 20;
+                    break;
+                default:
+                    width = BRICK_WIDTH;
+                    points = 10;
+            }
+            let brick = {
+                'visible': true,
+                'color': ROW_COLORS[colorIndex],
+                'x':currentX,
+                'y':(currentRow*BRICK_HEIGHT),
+                'width':width,
+                'height':BRICK_HEIGHT,
+                'points': points,
+            };
+            bricks.push(brick);
+            if(currentX+width > canvas.width){
+                currentRow++;
+                currentX = 0;
+                if(currentRow >= ROW_COLORS.length){
+                    colorIndex = currentRow-ROW_COLORS.length;
+                }else{
+                    colorIndex = currentRow;
+                }
+            }else{
+                currentX+=width;
+            }
+        }
+    }
+
+    function sound(src) {
+        this.sound = document.createElement("audio");
+        this.sound.src = src;
+        this.sound.setAttribute("preload", "auto");
+        this.sound.setAttribute("controls", "none");
+        this.sound.setAttribute("muted", "muted");
+        this.sound.style.display = "none";
+        document.body.appendChild(this.sound);
+        this.play = function(){
+            this.sound.play();
+        }
+        this.stop = function(){
+            this.sound.pause();
+        }
+    }
+
+    window.onload = ()=>{
+        canvas = document.getElementById('gameCanvas');
+        canvasContext = canvas.getContext('2d');
+
+        //Pre-Load Sounds
+        soundBrickHit = new sound('BrickHit.mp3');
+        soundBallOut = new sound('BallOut.mp3');
+        soundGameOver = new sound('GameOver.mp3');
+        soundGameWin = new sound('Winner.mp3');
+
+        ballX = canvas.width/2;
+        ballY = canvas.height/2;
+        ballSpeedX = 5;
+        ballSpeedY = 7;
+        paddleY = canvas.height - PADDLE_OFFSET;
+        initializeBricks();
+    }
+
+    function StartGame(button) {
+        if(!isGameRunning){
+            let framesPerSecond = 30;
+            setInterval(updateAll, 1000/framesPerSecond);
+            canvas.addEventListener('mousemove', updateMousePos);
+            button.innerText = 'Reset Game';
+            isGameRunning = true;
+        }else{
+            score = 0;
+            lives = 3;
+            bricks=[];
+            ballX = canvas.width/2;
+            ballY = canvas.height/2;
+            ballSpeedX = 5;
+            ballSpeedY = 7;
+            didPlayerWin = false;
+            isGameOver = false;
+            initializeBricks();
+        }
+
+    }
+</script>
+</html>
